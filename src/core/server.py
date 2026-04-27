@@ -1,5 +1,16 @@
 import socket
 import sys
+import threading
+import time
+
+def handle_client(conn, addr):
+    with conn:
+        while True:
+             data = conn.recv(1024)
+             if not data:
+                  break   
+
+
 
 class SSHHoneypotServer:
     
@@ -28,10 +39,9 @@ if __name__ == "__main__":
         SSHHoneypot = SSHHoneypotServer("0.0.0.0", 2222)
         SSHHoneypot.create_server_socket()
         print("Servidor iniciando na porta 2222")
-        conn, addr = SSHHoneypot.server_socket.accept()
-        conn.close()
-        SSHHoneypot.server_socket.close()
-
+        while True:
+            conn, addr = SSHHoneypot.server_socket.accept()
+            thread = threading.Thread(target=handle_client, args=(conn,addr))
+            thread.start()
     
-
-
+     
