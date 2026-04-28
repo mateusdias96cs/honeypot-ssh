@@ -1,6 +1,7 @@
 import socket
 import threading
 import logging
+import time
 from typing import Optional, Tuple
 
 class SSHHoneypotServer:
@@ -31,6 +32,8 @@ class SSHHoneypotServer:
             raise
 
     def handle_connection(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
+
+        
         """
         TAREFA #2: Implemente esta função!
         1. ADICIONAR conexão à lista de ativas
@@ -41,9 +44,13 @@ class SSHHoneypotServer:
         6. FECHAR conexão
         """
         try:
-            # ========== SUBSTITUA ISSO POR SEU CÓDIGO ==========
-            pass
-            # ===================================================
+            self.active_connections.append(addr)
+            self.logger.info(f"Conexão {addr}")
+            banner = b"SSH-2.0-OpenSSH_8.2\r\n"
+            conn.sendall(banner)
+            time.sleep(1)
+            
+            
         except Exception as e:
             self.logger.error(f"[-] Erro ao processar {addr}: {e}")
         finally:
@@ -74,8 +81,14 @@ class SSHHoneypotServer:
             while self.running:
                 try:
                     conn, addr = self.server_socket.accept()
-                    # ← ADICIONE CÓDIGO AQUI PARA THREAD
-                    pass
+                    
+                    if len(self.active_connections) < self.max_threads:
+                        thread = threading.Thread(target=self.handle_connection, args=(conn, addr))
+                        thread.daemon = True
+                        thread.start()
+                    else:
+                        conn.close()
+                    
                 except KeyboardInterrupt:
                     break
             # ==========================================
