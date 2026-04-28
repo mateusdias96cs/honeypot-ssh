@@ -34,15 +34,7 @@ class SSHHoneypotServer:
     def handle_connection(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
 
         
-        """
-        TAREFA #2: Implemente esta função!
-        1. ADICIONAR conexão à lista de ativas
-        2. REGISTRAR conexão com logger
-        3. ENVIAR banner SSH
-        4. MANTER conexão aberta (placeholder)
-        5. REMOVER de conexões ativas
-        6. FECHAR conexão
-        """
+
         try:
             self.active_connections.append(addr)
             self.logger.info(f"Conexão {addr}")
@@ -62,22 +54,14 @@ class SSHHoneypotServer:
                 pass
 
     def start(self) -> None:
-        """
-        TAREFA #2: Implemente esta função!
-        1. CRIAR socket
-        2. ENQUANTO running:
-            a. ACEITAR conexão
-            b. VERIFICAR se não excedeu max_threads
-            c. CRIAR nova thread
-            d. INICIAR thread com handle_connection
-        """
+
         self.create_server_socket()
         self.running = True
 
         try:
             self.logger.info("[*] Aguardando conexões...")
 
-            # ========== REESCREVA ESTA SEÇÃO ==========
+            
             while self.running:
                 try:
                     conn, addr = self.server_socket.accept()
@@ -91,7 +75,7 @@ class SSHHoneypotServer:
                     
                 except KeyboardInterrupt:
                     break
-            # ==========================================
+            
 
         except Exception as e:
             self.logger.error(f"[-] Erro no servidor: {e}")
