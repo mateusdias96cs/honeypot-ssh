@@ -85,5 +85,22 @@ class AuthenticationManager:
                 'real_name': 'Jenkins'
             },
         }
-            
 
+    def authenticate(self, username: str, password: str) -> Tuple[bool, Optional[Dict]]:
+        try:
+            if username not in self.users:
+                return False, None
+            
+            user = self.users[username]
+            expected_password = user['password']
+
+            if expected_password == password:
+                return True, user
+            else: 
+                return False, None
+        except Exception as e:
+            self.logger.error(f"[-] Authentication error: {e}")
+            return False, None
+
+
+        
