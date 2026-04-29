@@ -114,6 +114,11 @@ class ShellSimulator:
     
     def get_prompt(self) -> str:
         return f"{self.username}@webserver01:~$ "
+    
+    def _cmd_find(self, args: list) -> str:
+        if self.filesystem:
+            return self.filesystem.list_directory(args[0])
+        return "find: permission denied"
 
     def _cmd_wget(self, args: list) -> str:
     
