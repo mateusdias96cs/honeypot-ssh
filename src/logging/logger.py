@@ -40,7 +40,7 @@ class HoneypotLogger:
             if success:
                 msg = "Accepted password for" + username + " from " + ip
             else:
-                msg = print("Failed password for invalid user" + username)
+                msg = "Failed password for invalid user " + username + " from " + ip
         
             self.ssh_logger.warning(msg)
             password_hash = hashlib.sha256(password.encode()).hexdigest()
