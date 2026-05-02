@@ -2,7 +2,7 @@ import logging
 from typing import Dict, List, Optional
 from collections import defaultdict
 from datetime import datetime, timedelta
-from src.logging.analyzer import BehaviorAnalyzer
+
 
 class BehaviorAnalyzer:
 
