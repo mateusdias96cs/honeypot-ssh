@@ -120,7 +120,8 @@ class BehaviorAnalyzer:
                             'filepath': filepath,
                             'command': event.get('command'),
                             'severity': "critical"
-                        })  
+                        })
+            return alerts  
         except Exception as e:
             self.logger.error(f"[-] Erro ao detectar padrões: {e}")
             return []
