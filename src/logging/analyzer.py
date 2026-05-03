@@ -75,9 +75,9 @@ class BehaviorAnalyzer:
             for event in self.events:
                 if event.get('type') == 'command_execution':
                     ip = event.get('ip')
-                command = event.get('command', '')
-                if any(cmd in command for cmd in recon_commands):
-                    recon_count[ip] = recon_count.get(ip, 0) + 1
+                    command = event.get('command', '')
+                    if any(cmd in command for cmd in recon_commands):
+                        recon_count[ip] = recon_count.get(ip, 0) + 1
 
             for ip, count in recon_count.items():   
                 if count >= 3:
