@@ -10,6 +10,9 @@ from typing import Dict, Tuple, Optional
 from collections import defaultdict
 from dotenv import load_dotenv
 
+from src.core.shell import ShellSimulator
+from src.core.filesystem import VirtualFilesystem
+
 load_dotenv()
 
 
@@ -18,7 +21,7 @@ class SSHServerInterface(paramiko.ServerInterface):
     Implementação do servidor SSH com Paramiko.
     Autentica contra o auth.py e registra tentativas.
     """
-    
+
     def __init__(self, auth_manager, honey_logger, threat_intel, logger, rate_limiter):
         super().__init__()
         self.auth_manager = auth_manager
@@ -29,23 +32,23 @@ class SSHServerInterface(paramiko.ServerInterface):
         self.client_ip = None
         self.username = None
         self.authenticated = False
-    
+
     def check_auth_password(self, username: str, password: str) -> int:
         """
         Autentica usuário com PASSWORD contra bcrypt real.
         Retorna paramiko.AUTH_SUCCESSFUL ou paramiko.AUTH_FAILED
         """
         self.username = username
-        
+
         # Autenticar REAL contra auth.py
         success, user = self.auth_manager.authenticate(username, password)
-        
+
         # Log a tentativa
         if self.honey_logger:
             self.honey_logger.log_authentication_attempt(
                 username, password, self.client_ip, success=success
             )
-        
+
         if success:
             self.authenticated = True
             self.logger.info(f"[✓] Autenticação bem-sucedida: {username}@{self.client_ip}")
@@ -53,16 +56,24 @@ class SSHServerInterface(paramiko.ServerInterface):
         else:
             self.logger.warning(f"[✗] Falha de autenticação: {username}@{self.client_ip}")
             return paramiko.AUTH_FAILED
-    
+
     def get_allowed_auths(self, username: str) -> str:
         """Retorna métodos de autenticação suportados"""
         return "password"
-    
+
     def check_channel_request(self, kind: str, chanid: int) -> int:
         """Aceita requisições de canal SSH"""
         if kind == "session":
             return paramiko.OPEN_SUCCEEDED
         return paramiko.OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
+
+    def check_channel_pty_request(self, channel, term, width, height, pixelwidth, pixelheight, modes) -> bool:
+        """Aceita requisição de PTY"""
+        return True
+
+    def check_channel_shell_request(self, channel) -> bool:
+        """Aceita requisição de shell interativo"""
+        return True
 
 
 class SSHHoneypotServer:
@@ -212,51 +223,80 @@ class SSHHoneypotServer:
     
     def _handle_shell(self, channel: paramiko.Channel, username: str, client_ip: str):
         """
-        Simula shell interativo.
+        Simula shell interativo usando ShellSimulator.
         Captura comandos e registra no logger.
         """
+        filesystem = VirtualFilesystem()
+        home_dir = f'/home/{username}'
+        if not filesystem.exists(home_dir):
+            home_dir = '/home/PC'
+
+        shell = ShellSimulator(
+            username=username,
+            home_dir=home_dir,
+            filesystem=filesystem,
+            honey_logger=self.honey_logger,
+            client_ip=client_ip
+        )
+
         try:
-            channel.send(f"Welcome to APATE SSH Honeypot\r\n")
-            channel.send(f"{username}@honeypot:~$ ")
-            
+            channel.send(b"Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-84-generic x86_64)\r\n\r\n")
+            channel.send(shell.get_prompt().encode())
+
+            buf = b''
             while True:
                 data = channel.recv(1024)
-                
                 if not data:
                     break
-                
-                command = data.decode('utf-8', errors='ignore').strip()
-                
-                if not command:
-                    channel.send(f"{username}@honeypot:~$ ")
-                    continue
-                
-                # PREVENIR PATH TRAVERSAL
-                dangerous_patterns = ['../', '..\\', '~/..', '/etc/shadow', '/root/']
-                if any(pattern in command for pattern in dangerous_patterns):
-                    self.logger.warning(f"[!] Path traversal tentado: {username}@{client_ip}: {command}")
-                    channel.send("Permission denied\r\n")
-                    if self.honey_logger:
-                        self.honey_logger.log_command_execution(
-                            username, command, client_ip, success=False
-                        )
-                    channel.send(f"{username}@honeypot:~$ ")
-                    continue
-                
-                # Log do comando
-                self.logger.info(f"[CMD] {username}@{client_ip}: {command}")
-                if self.honey_logger:
-                    self.honey_logger.log_command_execution(
-                        username, command, client_ip, success=True
-                    )
-                
-                # Responder com comando fake
-                response = self._execute_fake_command(command, username)
-                channel.send(response + f"\r\n{username}@honeypot:~$ ")
-        
+
+                buf += data
+
+                # Process complete lines (handle \r\n, \n, and bare \r)
+                while True:
+                    cr = buf.find(b'\r')
+                    lf = buf.find(b'\n')
+
+                    if cr == -1 and lf == -1:
+                        break
+
+                    if cr == -1:
+                        pos, end = lf, lf + 1
+                    elif lf == -1:
+                        pos, end = cr, cr + 1
+                    else:
+                        pos = min(cr, lf)
+                        end = pos + 2 if buf[pos:pos + 2] == b'\r\n' else pos + 1
+
+                    line = buf[:pos]
+                    buf = buf[end:]
+
+                    command = line.decode('utf-8', errors='ignore').strip()
+
+                    if not command:
+                        channel.send(f"\r\n{shell.get_prompt()}".encode())
+                        continue
+
+                    self.logger.info(f"[CMD] {username}@{client_ip}: {command}")
+
+                    if command.lower() in ('exit', 'logout', 'quit'):
+                        channel.send(b"\r\nlogout\r\n")
+                        return
+
+                    response = shell.execute_command(command)
+                    if response is None:
+                        response = ""
+
+                    # Normalize line endings for SSH transport
+                    response = response.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+
+                    if response:
+                        channel.send(f"\r\n{response}\r\n{shell.get_prompt()}".encode())
+                    else:
+                        channel.send(f"\r\n{shell.get_prompt()}".encode())
+
         except Exception as e:
             self.logger.error(f"Erro no shell: {e}")
-        
+
         finally:
             channel.close()
     

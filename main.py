@@ -2,10 +2,14 @@
 
 import os
 import sys
+import signal
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
 import warnings
+
+# Restore SIGINT to default so Ctrl+C works even when started as a background process
+signal.signal(signal.SIGINT, signal.default_int_handler)
 
 # Suppress cryptography deprecation warnings from paramiko
 try:
@@ -20,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from src.core.auth import AuthenticationManager
 from src.core.server import SSHHoneypotServer
 from src.logging.logger import HoneypotLogger
+from src.logging.analyzer import BehaviorAnalyzer
 from src.logging.threat_intel import ThreatIntelligence
 from src.core.rate_limiter import IPRateLimiter
 
@@ -75,8 +80,18 @@ def main():
     try:
         server.start()
     except KeyboardInterrupt:
+        pass
+    finally:
         logger.info("[+] Encerrando honeypot...")
         server.stop()
+
+        events = honey_logger.get_events()
+        if events:
+            analyzer = BehaviorAnalyzer(events)
+            print("\n" + analyzer.generate_report())
+        else:
+            print("\n[!] Nenhum evento capturado.")
+
         sys.exit(0)
 
 if __name__ == '__main__':

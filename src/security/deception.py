@@ -96,8 +96,9 @@ class DeceptionEngine:
         return '\n'.join(lines)
     
     def get_randomized_response_delay(self) -> float:
-        generate_number = random.uniform(0.05, 1.5)
-        time.sleep(3)
+        delay = random.uniform(0.05, 1.5)
+        time.sleep(delay)
+        return delay
 
     def get_permission_denied_message(self) -> str:
         """Retornar mensagem de acesso negado (variada)"""

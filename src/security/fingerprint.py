@@ -21,9 +21,11 @@ class FingerprintMitigation:
             if match:
                 banner = "SSH-2.0-" + match.group()
                 self._banner_cache = banner.encode() + b"\r\n"
+            else:
+                self._banner_cache = b"SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5\r\n"
             return self._banner_cache
 
-        except:
+        except Exception:
             return b"SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5\r\n"
     
     def get_system_info(self) -> dict:
