@@ -33,7 +33,7 @@ class BehaviorAnalyzer:
                     analysis[ip]['failed'] += 1
             
             for ip, dados in analysis.items():
-                if dados['failed'] > 5:
+                if dados['failed'] >= 5:
                     self.threats.append({
                         'type': 'brute_force',
                         'ip' : ip,
@@ -54,7 +54,7 @@ class BehaviorAnalyzer:
 
             auth_analysis = self.analyze_authentication_attempts()
             for ip, data in auth_analysis.items():
-                if data.get('failed', 0 ) > 5:
+                if data.get('failed', 0) >= 5:
                     alerts.append({
                         'type': 'brute_force',
                         'ip': ip,
@@ -83,11 +83,13 @@ class BehaviorAnalyzer:
             
             for event in self.events:
                 if event.get('type') == "command_execution":
-                    if "ssh" in event.get('command', ''):
+                    cmd = event.get('command', '')
+                    parts = cmd.strip().split()
+                    if parts and parts[0] == 'ssh':
                         alerts.append({
                             'type': 'Lateral Movement',
                             'ip': event.get('ip'),
-                            'command': event.get('command'),
+                            'command': cmd,
                             'severity': 'High'
                         })
             

@@ -110,7 +110,7 @@ class ShellSimulator:
         if args:
             non_flag_args = [a for a in args if not a.startswith('-')]
             if non_flag_args:
-                path = non_flag_args[0]
+                path = self._expand_path(non_flag_args[0])
                 if self.filesystem:
                     target_dir = self.filesystem.normalize_path(self.current_dir, path)
                 else:
@@ -177,7 +177,7 @@ class ShellSimulator:
         if not non_flag_args:
             return ""
         
-        filepath = non_flag_args[0]
+        filepath = self._expand_path(non_flag_args[0])
 
         # resolve relative path
         if self.filesystem:
@@ -288,10 +288,7 @@ class ShellSimulator:
                 name_filter = args[idx + 1].replace('*', '').replace('"', '').replace("'", '')
 
         if self.filesystem:
-            # Expand ~ and normalize relative paths to absolute before resolving
-            if raw == '~':
-                raw = self.home_dir
-            abs_path = self.filesystem.normalize_path(self.current_dir, raw)
+            abs_path = self.filesystem.normalize_path(self.current_dir, self._expand_path(raw))
             resolved = self.filesystem.resolve_path(abs_path)
             results = []
             for path in self.filesystem.fs_tree.keys():
@@ -335,6 +332,14 @@ class ShellSimulator:
     def _cmd_python(self) -> str:
         return "Python 3.10.12 (main, Nov 20 2023, 15:14:05) [GCC 11.4.0] on linux\nType \"help\", \"copyright\", \"credits\" or \"license\" for more information.\n>>>"
 
+    def _expand_path(self, path: str) -> str:
+        """Expand leading ~ to the session home directory."""
+        if path == '~':
+            return self.home_dir
+        if path.startswith('~/'):
+            return self.home_dir + path[1:]
+        return path
+
     def _cmd_nc(self, args: list) -> str:
         time.sleep(3)
         return "nc: connect to host: Connection refused"
@@ -367,7 +372,13 @@ class ShellSimulator:
         )
 
     def _cmd_curl(self, args: list) -> str:
-        target = args[-1] if args else 'example.com'
+        if not args:
+            target = 'example.com'
+        else:
+            target = next(
+                (a for a in args if a.startswith(('http://', 'https://'))),
+                next((a for a in args if not a.startswith('-')), args[-1])
+            )
         time.sleep(2)
         host = target.replace('http://', '').replace('https://', '').split('/')[0]
         return f"curl: (6) Could not resolve host: {host}"
@@ -380,8 +391,8 @@ class ShellSimulator:
             self.current_dir = self.home_dir
             return ""
         
-        target = args[0]
-        
+        target = self._expand_path(args[0])
+
         # handle cd -
         if target == '-':
             return self.current_dir
