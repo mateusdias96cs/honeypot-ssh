@@ -1,9 +1,10 @@
 import pytest
 import time
-from src.core.server import SSHHoneypotServer, IPRateLimiter
+from src.core.server import SSHHoneypotServer
+from src.core.rate_limiter import IPRateLimiter
 from src.core.shell import ShellSimulator
 from src.core.filesystem import VirtualFilesystem
-from src.core.auth import AuthenticationManager, hash_password
+from src.core.auth import AuthenticationManager
 from src.logging.threat_intel import ThreatIntelligence
 
 def test_rate_limiter():
@@ -49,9 +50,13 @@ def test_threat_intel_blocking():
 
 def test_bcrypt_hashing(tmp_path):
     users_file = tmp_path / "users.json"
-    users_file.write_text('{"testuser": {"password": "plaintextpassword"}}')
     
-    auth_mgr = AuthenticationManager(users_file=str(users_file))
+    config = {
+        'users': {'testuser': {'password': 'plaintextpassword'}},
+        'db_path': str(users_file)
+    }
+    
+    auth_mgr = AuthenticationManager(config)
     
     # Password should be converted
     assert auth_mgr.users["testuser"]["password"].startswith("$2b$")

@@ -69,15 +69,8 @@ class BehaviorAnalyzer:
                         "user": event.get('username'),
                         "severity": "high"
                     })
-            recon_commands = ["whoami", "id", "uname", "hostname", "ifconfig", "netstat"]
-            recon_count = {}
+            recon_count = self.identify_reconnaissance_attempts()
 
-            for event in self.events:
-                if event.get('type') == 'command_execution':
-                    ip = event.get('ip')
-                    command = event.get('command', '')
-                    if any(cmd in command for cmd in recon_commands):
-                        recon_count[ip] = recon_count.get(ip, 0) + 1
 
             for ip, count in recon_count.items():   
                 if count >= 3:
@@ -142,4 +135,26 @@ class BehaviorAnalyzer:
             report += f"[{alert['type'].upper()}]{alert}\n"
 
         return report
+
+    def identify_reconnaissance_attempts(self) -> Dict[str, int]:
+        """
+        Identifica IPs que tentam reconhecimento.
+        Retorna: {ip: count_de_tentativas}
+        """
+        recon_commands = [
+            'nmap', 'netstat', 'ifconfig', 'ip', 'uname', 'whoami',
+            'cat /etc/passwd', 'cat /etc/shadow', 'ls -la /root',
+            'ps aux', 'netcat', 'nc', 'wget', 'curl', 'nc -l'
+        ]
         
+        recon_count = {}
+        
+        for event in self.events:
+            if event.get('type') == 'command_execution':
+                ip = event.get('ip')
+                command = event.get('command', '')  # ✅ DENTRO DO IF
+                
+                if any(cmd in command for cmd in recon_commands):
+                    recon_count[ip] = recon_count.get(ip, 0) + 1
+        
+        return recon_count

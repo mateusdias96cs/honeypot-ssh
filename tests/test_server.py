@@ -14,7 +14,14 @@ from src.logging.threat_intel import ThreatIntelligence
 class TestAuthentication(unittest.TestCase):
 
     def setUp(self):
-        self.auth = AuthenticationManager()
+        config = {
+            'users': {
+                'PC': {'password': 'carlos2022'},
+                'admin': {'password': 'admin123'}
+            },
+            'db_path': 'data/test_users.json'
+        }
+        self.auth = AuthenticationManager(config)
 
     def test_valid_login(self):
         success, user = self.auth.authenticate('PC', 'carlos2022')

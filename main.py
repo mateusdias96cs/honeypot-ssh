@@ -1,105 +1,83 @@
 #!/usr/bin/env python3
+
+import os
 import sys
 import logging
-import argparse
 from pathlib import Path
+from dotenv import load_dotenv
+import warnings
 
-from config.settings import CONFIG
-from src.core.server import SSHHoneypotServer
+# Suppress cryptography deprecation warnings from paramiko
+try:
+    from cryptography.utils import CryptographyDeprecationWarning
+    warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
+except ImportError:
+    pass
+
+# Adicionar src ao path
+sys.path.insert(0, str(Path(__file__).parent))
+
 from src.core.auth import AuthenticationManager
-from src.core.filesystem import VirtualFilesystem
-from src.security.fingerprint import FingerprintMitigation
-from src.security.deception import DeceptionEngine
-from src.security.anti_detect import AntiDetection
+from src.core.server import SSHHoneypotServer
 from src.logging.logger import HoneypotLogger
-from src.logging.analyzer import BehaviorAnalyzer
 from src.logging.threat_intel import ThreatIntelligence
+from src.core.rate_limiter import IPRateLimiter
 
-def setup_logging_system(debug_mode: bool = False) -> logging.Logger:
-    logger = logging.getLogger('honeypot')
-    level = logging.DEBUG if debug_mode else logging.INFO
-    logger.setLevel(level)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        '[%(asctime)s] %(levelname)s - %(name)s: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+# Carregar .env
+load_dotenv()
 
-def initialize_components(config: dict, logger: logging.Logger) -> dict:
-    logger.info("[*] Inicializando componentes...")
-    components = {
-        'auth': AuthenticationManager(config.get('users_file')),
-        'filesystem': VirtualFilesystem(),
-        'fingerprint': FingerprintMitigation(),
-        'deception': DeceptionEngine(),
-        'anti_detect': AntiDetection(),
-        'logger': HoneypotLogger(
-            config.get('log_file'),
-            config.get('internal_log')
-        ),
-        'threat_intel': ThreatIntelligence(),
+# Configurar logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+def main():
+    """Inicia o honeypot SSH"""
+    
+    logger.info("[+] APATE SSH Honeypot iniciando...")
+    
+    # Criar diretórios necessários
+    Path("logs").mkdir(exist_ok=True)
+    Path("data").mkdir(exist_ok=True)
+    
+    # Configurar componentes
+    config = {
+        'users': {
+            'admin': {'password': 'admin123'},
+            'carlos': {'password': 'senha_123'},
+            'test': {'password': 'test123'}
+        },
+        'db_path': 'data/users.json'
     }
-    logger.info("[+] Componentes inicializados com sucesso")
-    return components
-
-def start_honeypot(config: dict, components: dict, logger: logging.Logger) -> None:
+    
+    # Inicializar componentes
+    auth_manager = AuthenticationManager(config)
+    honey_logger = HoneypotLogger()
+    threat_intel = ThreatIntelligence() if os.getenv('ENABLE_THREAT_INTEL') == 'true' else None
+    rate_limiter = IPRateLimiter(
+        max_connections=int(os.getenv('RATE_LIMIT_MAX_CONNECTIONS', 10)),
+        time_window=int(os.getenv('RATE_LIMIT_TIME_WINDOW', 60))
+    )
+    
+    # Componentes
+    components = {
+        'auth': auth_manager,
+        'logger': honey_logger,
+        'threat_intel': threat_intel,
+        'rate_limiter': rate_limiter
+    }
+    
+    # Iniciar servidor SSH
+    server = SSHHoneypotServer(components)
+    
     try:
-        logger.info(f"[+] Iniciando SSH Honeypot")
-        logger.info(f"[+] Host: {config['host']}:{config['port']}")
-
-        server = SSHHoneypotServer(config['host'], config['port'], components=components)
-        logger.info("[*] Aguardando conexões...")
         server.start()
-
     except KeyboardInterrupt:
-        logger.info("\n[!] Servidor interrompido pelo usuário (Ctrl+C)")
-
-    except Exception as e:
-        logger.error(f"[-] Erro no servidor: {e}")
-
-    finally:
-        try:
-            honey_logger = components.get('logger')
-            if honey_logger:
-                events = honey_logger.get_events()
-                analyzer = BehaviorAnalyzer(events)
-                report = analyzer.generate_report()
-                logger.info(f"\n{report}")
-
-                threat_intel = components.get('threat_intel')
-                if threat_intel:
-                    summary = threat_intel.get_threat_summary(events)
-                    logger.info(f"[!] Resumo de ameaças: {summary}")
-
-            logger.info("[+] Honeypot finalizado")
-        except Exception as e:
-            logger.error(f"[-] Erro ao gerar relatório: {e}")
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description='SSH Honeypot Profissional')
-    parser.add_argument('--debug', action='store_true', help='Modo debug')
-    parser.add_argument('--port', type=int, help='Porta customizada')
-    parser.add_argument('--host', default='0.0.0.0', help='Host')
-    parser.add_argument('--version', action='version', version='%(prog)s 1.0.0')
-    args = parser.parse_args()
-
-    if args.port:
-        CONFIG['port'] = args.port
-    if args.host:
-        CONFIG['host'] = args.host
-    CONFIG['debug_mode'] = args.debug
-
-    logger = setup_logging_system(args.debug)
-
-    logger.info("=" * 60)
-    logger.info("SSH HONEYPOT PROFISSIONAL v1.0.0")
-    logger.info("=" * 60)
-
-    components = initialize_components(CONFIG, logger)
-    start_honeypot(CONFIG, components, logger)
+        logger.info("[+] Encerrando honeypot...")
+        server.stop()
+        sys.exit(0)
 
 if __name__ == '__main__':
     main()

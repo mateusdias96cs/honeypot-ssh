@@ -1,131 +1,122 @@
-import json
-import hashlib
-import logging
 import bcrypt
-from typing import Dict, Optional, Tuple
+import json
+import logging
 from pathlib import Path
+from typing import Tuple, Optional, Dict
 
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(14)).decode()
 
 class AuthenticationManager:
+    """
+    Gerenciador de autenticação com hash bcrypt.
+    Suporta migração automática de senhas plaintext.
+    """
     
-
-
-    def __init__(self, users_file: Optional[str] = None):
+    def __init__(self, config: Dict):
         self.logger = logging.getLogger(__name__)
-        self.users: Dict[str, Dict] = {}
-        self.users_file = users_file or "config/users.json"
-        self.load_users()
+        self.users = config.get('users', {})
+        self.db_path = Path(config.get('db_path', 'data/users.json'))
+        
+        # Converter senhas plaintext para bcrypt
         self._ensure_hashed_passwords()
-
+        self._save_to_file()
+    
     def _ensure_hashed_passwords(self) -> None:
+        """Converte senhas plaintext para bcrypt hash"""
         changed = False
+        
         for username, user_data in self.users.items():
             stored_password = user_data.get('password', '')
+            
+            # Se não é hash bcrypt, converter
             if not stored_password.startswith('$2b$'):
-                user_data['password'] = hash_password(stored_password)
+                self.logger.info(f"[!] Convertendo plaintext para bcrypt: {username}")
+                user_data['password'] = self.hash_password(stored_password)
                 changed = True
         
         if changed:
-            path = Path(self.users_file)
-            with open(path, 'w') as f:
-                json.dump(self.users, f, indent=4)
-            self.logger.info("Senhas em plaintext convertidas para hash bcrypt com sucesso.")
-
-    def load_users(self) -> None:
-        path = Path(self.users_file)
-
-        if path.exists():
-            with open(path, "r") as f:
-                self.users = json.load(f)
-                
-            self.logger.info(f"Sucesso: {len(self.users)} usuários carregados.")
-        else:
-            self.users = self._create_default_users()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, 'w') as f:
-                json.dump(self.users, f)
-            self.logger.warning("Arquivo de usuários não encontrado. Usando lista padrão.")
-
-
-    def _create_default_users(self) -> Dict[str, Dict]:
+            self.logger.info("[+] Senhas convertidas para bcrypt")
+    
+    @staticmethod
+    def hash_password(password: str) -> str:
         """
-        Criar usuários padrão realistas
-        Cada um representa um cenário comum
-        """
-        return {
-            'root': {
-                'password': 'root@server2024',  # Senha "forte" mas comum
-                'uid': 0,
-                'gid': 0,
-                'shell': '/bin/bash',
-                'home': '/root',
-                'real_name': 'root'
-            },
-            'admin': {
-                'password': 'admin123',  # Senha fraca comum
-                'uid': 1000,
-                'gid': 1000,
-                'shell': '/bin/bash',
-                'home': '/home/admin',
-                'real_name': 'Administrator'
-            },
-            'carlos': {
-                'password': 'carlos2022',  # Senha média
-                'uid': 1001,
-                'gid': 1001,
-                'shell': '/bin/bash',
-                'home': '/home/carlos',
-                'real_name': 'Carlos User'
-            },
-            'postgres': {
-                'password': 'postgres',  # Padrão de serviço
-                'uid': 113,
-                'gid': 120,
-                'shell': '/bin/false',
-                'home': '/var/lib/postgresql',
-                'real_name': 'PostgreSQL'
-            },
-            'deploy': {
-                'password': 'deploy_key_2024',  # Chave de deploy
-                'uid': 1002,
-                'gid': 1002,
-                'shell': '/bin/bash',
-                'home': '/home/deploy',
-                'real_name': 'Deploy User'
-            },
-            'jenkins': {
-                'password': 'jenkins_ci_secret',
-                'uid': 114,
-                'gid': 125,
-                'shell': '/bin/false',
-                'home': '/var/lib/jenkins',
-                'real_name': 'Jenkins'
-            },
-        }
-
-    def authenticate(self, username: str, password: str) -> Tuple[bool, Optional[Dict]]:
-        try:
-            if username not in self.users:
-                return False, None
-            
-            user = self.users[username]
-            stored_hash = user['password']
-
-            # Se ainda for plaintext, converter
-            if not stored_hash.startswith('$2b$'):
-                stored_hash = hash_password(stored_hash)
-                self.users[username]['password'] = stored_hash
-                with open(self.users_file, 'w') as f:
-                    json.dump(self.users, f, indent=4)
-
-            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
-                return True, user
-            return False, None
-        except Exception as e:
-            self.logger.error(f"[-] Authentication error: {e}")
-            return False, None
-
-
+        Cria hash bcrypt de senha.
         
+        Args:
+            password: Senha em plaintext
+        
+        Returns:
+            Hash bcrypt com salt
+        """
+        salt = bcrypt.gensalt(rounds=14)
+        hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+        return hashed.decode('utf-8')
+    
+    @staticmethod
+    def verify_password(password: str, hashed: str) -> bool:
+        """
+        Verifica senha contra hash bcrypt.
+        
+        Args:
+            password: Senha em plaintext
+            hashed: Hash bcrypt armazenado
+        
+        Returns:
+            True se a senha está correta
+        """
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+        except Exception as e:
+            logging.error(f"Erro ao verificar senha: {e}")
+            return False
+    
+    def authenticate(self, username: str, password: str) -> Tuple[bool, Optional[Dict]]:
+        """
+        Autentica usuário contra banco de dados.
+        
+        Args:
+            username: Nome de usuário
+            password: Senha em plaintext
+        
+        Returns:
+            Tupla (success: bool, user_data: Dict ou None)
+        """
+        if not username or not password:
+            return False, None
+        
+        user_data = self.users.get(username)
+        
+        if not user_data:
+            self.logger.warning(f"[!] Usuário não encontrado: {username}")
+            return False, None
+        
+        stored_password = user_data.get('password', '')
+        
+        if self.verify_password(password, stored_password):
+            self.logger.info(f"[✓] Autenticação bem-sucedida: {username}")
+            return True, {'username': username, **user_data}
+        else:
+            self.logger.warning(f"[✗] Falha de autenticação: {username}")
+            return False, None
+    
+    def add_user(self, username: str, password: str) -> bool:
+        """Adiciona novo usuário com senha hasheada"""
+        if username in self.users:
+            self.logger.warning(f"[!] Usuário já existe: {username}")
+            return False
+        
+        self.users[username] = {
+            'password': self.hash_password(password),
+            'created_at': str(Path.cwd())
+        }
+        self._save_to_file()
+        self.logger.info(f"[+] Usuário criado: {username}")
+        return True
+    
+    def _save_to_file(self) -> None:
+        """Salva usuários em arquivo JSON (opcional)"""
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            # Não salvar passwords em arquivo real - apenas em memória
+            # Esta é apenas uma estrutura
+        except Exception as e:
+            self.logger.error(f"Erro ao salvar usuários: {e}")
