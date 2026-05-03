@@ -181,8 +181,9 @@ class SSHHoneypotServer:
         try:
             # Criar transporte SSH
             transport = paramiko.Transport(client_socket)
+            transport.local_version = "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6"
             transport.add_server_key(self.host_key)
-            
+
             # Criar interface do servidor
             server_interface = SSHServerInterface(
                 self.auth_manager,
@@ -227,9 +228,7 @@ class SSHHoneypotServer:
         Captura comandos e registra no logger.
         """
         filesystem = VirtualFilesystem()
-        home_dir = f'/home/{username}'
-        if not filesystem.exists(home_dir):
-            home_dir = '/home/PC'
+        home_dir = f'/home/{username}' if username else '/home/PC'
 
         shell = ShellSimulator(
             username=username,

@@ -94,6 +94,8 @@ class ShellSimulator:
                     return self._cmd_python()
                 case "nc" | "netcat":
                     return self._cmd_nc(args)
+                case "ssh":
+                    return self._cmd_ssh(args)
                 case _:
                     return f"bash: {command}: command not found"
                 
@@ -276,23 +278,28 @@ class ShellSimulator:
     def _cmd_find(self, args: list = None) -> str:
         if not args:
             return "find: missing argument"
-        
-        search_path = args[0] if args else self.current_dir
+
+        raw = args[0] if args else self.current_dir
         name_filter = None
-        
+
         if '-name' in args:
             idx = args.index('-name')
             if idx + 1 < len(args):
                 name_filter = args[idx + 1].replace('*', '').replace('"', '').replace("'", '')
 
         if self.filesystem:
+            # Expand ~ and normalize relative paths to absolute before resolving
+            if raw == '~':
+                raw = self.home_dir
+            abs_path = self.filesystem.normalize_path(self.current_dir, raw)
+            resolved = self.filesystem.resolve_path(abs_path)
             results = []
             for path in self.filesystem.fs_tree.keys():
-                if path.startswith(search_path):
+                if path.startswith(resolved):
                     if name_filter is None or name_filter in path:
                         results.append(path)
             return '\n'.join(results) if results else ""
-        
+
         return ""
 
     def _cmd_env(self) -> str:
@@ -331,6 +338,14 @@ class ShellSimulator:
     def _cmd_nc(self, args: list) -> str:
         time.sleep(3)
         return "nc: connect to host: Connection refused"
+
+    def _cmd_ssh(self, args: list) -> str:
+        if not args:
+            return "usage: ssh [-p port] [user@]hostname [command]"
+        target = args[-1]
+        time.sleep(4)
+        host = target.split('@')[-1] if '@' in target else target
+        return f"ssh: connect to host {host} port 22: Connection timed out"
 
     def get_prompt(self) -> str:
         if self.current_dir == self.home_dir:

@@ -192,16 +192,33 @@ class VirtualFilesystem:
         },
     }
 
+    def _resolve_path(self, path: str) -> str:
+        """Remap /home/<unknown-user>/... to /home/PC/... for unknown users."""
+        if path in self.fs_tree:
+            return path
+        parts = path.strip('/').split('/')
+        if len(parts) >= 2 and parts[0] == 'home' and parts[1] != 'PC':
+            user_home = '/home/' + parts[1]
+            if user_home not in self.fs_tree:
+                rest = parts[2:]
+                return '/home/PC' + ('/' + '/'.join(rest) if rest else '')
+        return path
+
+    def resolve_path(self, path: str) -> str:
+        """Public wrapper around _resolve_path for use by shell commands."""
+        return self._resolve_path(path)
+
     def exists(self, path: str) -> bool:
         """Verifica se um arquivo ou diretório existe"""
-        return path in self.fs_tree
+        return self._resolve_path(path) in self.fs_tree
 
     def get_file(self, path: str) -> Optional[Dict]:
         """Obtém informações de um arquivo ou diretório"""
-        if not self.exists(path):
+        resolved = self._resolve_path(path)
+        if resolved not in self.fs_tree:
             self.logger.warning(f"Caminho não encontrado: {path}")
             return None
-        return self.fs_tree[path]
+        return self.fs_tree[resolved]
 
     def read_file(self, path: str) -> Optional[str]:
         """Lê o conteúdo de um arquivo"""
@@ -220,25 +237,24 @@ class VirtualFilesystem:
         dir_info = self.get_file(path)
         if not dir_info:
             return []
-        
+
         if dir_info.get('tipo') != 'dir':
             self.logger.error(f"Caminho não é um diretório: {path}")
             return []
-        
-        # Normalizar path para acabar com /
-        if not path.endswith('/'):
-            path += '/'
-        
-        # Encontrar todos os items que começam com este path
+
+        # Use resolved path so /home/<unknown-user> maps to /home/PC
+        resolved = self._resolve_path(path)
+        prefix = resolved.rstrip('/') + '/'
+
         contents = []
         for fs_path in self.fs_tree.keys():
-            if fs_path.startswith(path) and fs_path != path.rstrip('/'):
-                # Obter apenas o primeiro nível
-                relative = fs_path[len(path):]
+            if fs_path.startswith(prefix) and fs_path != resolved:
+                relative = fs_path[len(prefix):]
                 if '/' not in relative or relative.endswith('/'):
-                    if relative not in contents:
-                        contents.append(relative.rstrip('/'))
-        
+                    entry = relative.rstrip('/')
+                    if entry and entry not in contents:
+                        contents.append(entry)
+
         return sorted(contents)
 
     def get_permissions(self, path: str) -> Optional[str]:
