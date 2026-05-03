@@ -40,8 +40,16 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Inicia o honeypot SSH"""
-    
+        
     logger.info("[+] APATE SSH Honeypot iniciando...")
+    try:
+        from abertura import BANNER
+        print(BANNER)
+    except Exception:
+        pass
+    
+    
+    
     
     # Criar diretórios necessários
     Path("logs").mkdir(exist_ok=True)
