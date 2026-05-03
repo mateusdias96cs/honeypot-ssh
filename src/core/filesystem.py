@@ -9,6 +9,23 @@ class VirtualFilesystem:
         self.logger = logging.getLogger(__name__)
         self.fs_tree = self._create_filesystem()
 
+    def normalize_path(self, current_dir: str, target_path: str) -> str:
+        """Normaliza um caminho lidando com caminhos relativos, . e .."""
+        if target_path.startswith('/'):
+            new_path = target_path
+        else:
+            new_path = current_dir.rstrip('/') + '/' + target_path
+
+        parts = []
+        for part in new_path.split('/'):
+            if part == '..':
+                if parts:
+                    parts.pop()
+            elif part and part != '.':
+                parts.append(part)
+        
+        return '/' + '/'.join(parts)
+
     def _create_filesystem(self) -> Dict:
         return {
         # Root directories

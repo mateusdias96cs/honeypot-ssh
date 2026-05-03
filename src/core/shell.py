@@ -109,9 +109,12 @@ class ShellSimulator:
             non_flag_args = [a for a in args if not a.startswith('-')]
             if non_flag_args:
                 path = non_flag_args[0]
-                if not path.startswith('/'):
-                    path = self.current_dir.rstrip('/') + '/' + path
-                target_dir = path
+                if self.filesystem:
+                    target_dir = self.filesystem.normalize_path(self.current_dir, path)
+                else:
+                    if not path.startswith('/'):
+                        path = self.current_dir.rstrip('/') + '/' + path
+                    target_dir = path
 
         if self.filesystem:
             contents = self.filesystem.list_directory(target_dir)
@@ -175,8 +178,11 @@ class ShellSimulator:
         filepath = non_flag_args[0]
 
         # resolve relative path
-        if not filepath.startswith('/'):
-            filepath = self.current_dir.rstrip('/') + '/' + filepath
+        if self.filesystem:
+            filepath = self.filesystem.normalize_path(self.current_dir, filepath)
+        else:
+            if not filepath.startswith('/'):
+                filepath = self.current_dir.rstrip('/') + '/' + filepath
 
         # Log file access to HoneypotLogger
         if self.honey_logger and self.client_ip:
@@ -365,20 +371,22 @@ class ShellSimulator:
         if target == '-':
             return self.current_dir
 
-        if target.startswith('/'):
-            new_path = target
+        if self.filesystem:
+            new_path = self.filesystem.normalize_path(self.current_dir, target)
         else:
-            new_path = self.current_dir.rstrip('/') + '/' + target
-
-        # normalize path (handle .. and .)
-        parts = []
-        for part in new_path.split('/'):
-            if part == '..':
-                if parts:
-                    parts.pop()
-            elif part and part != '.':
-                parts.append(part)
-        new_path = '/' + '/'.join(parts)
+            if target.startswith('/'):
+                new_path = target
+            else:
+                new_path = self.current_dir.rstrip('/') + '/' + target
+            # normalize path (handle .. and .)
+            parts = []
+            for part in new_path.split('/'):
+                if part == '..':
+                    if parts:
+                        parts.pop()
+                elif part and part != '.':
+                    parts.append(part)
+            new_path = '/' + '/'.join(parts)
 
         if self.filesystem and self.filesystem.exists(new_path):
             file_info = self.filesystem.get_file(new_path)

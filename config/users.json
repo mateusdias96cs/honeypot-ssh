@@ -1,1 +1,50 @@
-{"root": {"password": "root@server2024", "uid": 0, "gid": 0, "shell": "/bin/bash", "home": "/root", "real_name": "root"}, "admin": {"password": "admin123", "uid": 1000, "gid": 1000, "shell": "/bin/bash", "home": "/home/admin", "real_name": "Administrator"}, "PC": {"password": "carlos2022", "uid": 1001, "gid": 1001, "shell": "/bin/bash", "home": "/home/PC", "real_name": "Carlos User"}, "postgres": {"password": "postgres", "uid": 113, "gid": 120, "shell": "/bin/false", "home": "/var/lib/postgresql", "real_name": "PostgreSQL"}, "deploy": {"password": "deploy_key_2024", "uid": 1002, "gid": 1002, "shell": "/bin/bash", "home": "/home/deploy", "real_name": "Deploy User"}, "jenkins": {"password": "jenkins_ci_secret", "uid": 114, "gid": 125, "shell": "/bin/false", "home": "/var/lib/jenkins", "real_name": "Jenkins"}}
+{
+    "root": {
+        "password": "$2b$14$eG13mOhn8HmWdhidVlkgPudyZqL9yNQRJvay0ijfWLvPb6ud0cbwK",
+        "uid": 0,
+        "gid": 0,
+        "shell": "/bin/bash",
+        "home": "/root",
+        "real_name": "root"
+    },
+    "admin": {
+        "password": "$2b$14$WhnyV/Q24ZrdePATivNK1OKaum0p2WRNJwzYcqQRXT3QwbbntftIe",
+        "uid": 1000,
+        "gid": 1000,
+        "shell": "/bin/bash",
+        "home": "/home/admin",
+        "real_name": "Administrator"
+    },
+    "PC": {
+        "password": "$2b$14$WKLOtwNrLrUKee0JAOUjTOCQafdfJ9.sWNfGNmRTrVK7vkn61iZde",
+        "uid": 1001,
+        "gid": 1001,
+        "shell": "/bin/bash",
+        "home": "/home/PC",
+        "real_name": "Carlos User"
+    },
+    "postgres": {
+        "password": "$2b$14$KhzFAIpsBRPKAPMKpuS6s.rCDvBrQ97v9x6DI5n0B31WbTKT1PwuW",
+        "uid": 113,
+        "gid": 120,
+        "shell": "/bin/false",
+        "home": "/var/lib/postgresql",
+        "real_name": "PostgreSQL"
+    },
+    "deploy": {
+        "password": "$2b$14$wz7iw/ppcPIPGrpTqeyyW.WBeoG2af7Ix6V9m2d10t7OwFgmRHQjG",
+        "uid": 1002,
+        "gid": 1002,
+        "shell": "/bin/bash",
+        "home": "/home/deploy",
+        "real_name": "Deploy User"
+    },
+    "jenkins": {
+        "password": "$2b$14$CdkgMfDHS5wTVDVTBLrzOOzBX35X0I3DHWOJ7tH.KkbIrcaEmnJW.",
+        "uid": 114,
+        "gid": 125,
+        "shell": "/bin/false",
+        "home": "/var/lib/jenkins",
+        "real_name": "Jenkins"
+    }
+}

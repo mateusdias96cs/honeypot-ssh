@@ -2,9 +2,26 @@ import socket
 import threading
 import logging
 import time
+from collections import defaultdict
 from typing import Optional, Tuple
 from src.core.shell import ShellSimulator
 from src.core.filesystem import VirtualFilesystem
+
+class IPRateLimiter:
+    def __init__(self, max_connections: int, time_window: int):
+        self.max_connections = max_connections
+        self.time_window = time_window
+        self.connections = defaultdict(list)
+        self.lock = threading.Lock()
+
+    def is_allowed(self, ip: str) -> bool:
+        with self.lock:
+            now = time.time()
+            self.connections[ip] = [t for t in self.connections[ip] if now - t < self.time_window]
+            if len(self.connections[ip]) >= self.max_connections:
+                return False
+            self.connections[ip].append(now)
+            return True
 
 class SSHHoneypotServer:
     """
@@ -24,6 +41,7 @@ class SSHHoneypotServer:
         self.honey_logger = components.get('logger')
         self.filesystem = components.get('filesystem')
         self.threat_intel = components.get('threat_intel')
+        self.rate_limiter = IPRateLimiter(max_connections=10, time_window=60)
 
     def create_server_socket(self) -> None:
         try:
@@ -40,6 +58,20 @@ class SSHHoneypotServer:
     def handle_connection(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
         client_ip = addr[0]
         try:
+            # Check threat intel first to block known bad actors
+            if self.threat_intel:
+                reputation = self.threat_intel.check_ip_reputation(client_ip)
+                if reputation.get('threat_level', 0) >= 8:
+                    self.logger.warning(f"[!] Conexão bloqueada de {client_ip} devido à má reputação.")
+                    conn.close()
+                    return
+
+            # Check rate limiting
+            if not self.rate_limiter.is_allowed(client_ip):
+                self.logger.warning(f"[!] Rate limit excedido para {client_ip}.")
+                conn.close()
+                return
+
             self.active_connections.append(addr)
             self.logger.info(f"Conexão recebida de {addr}")
             

@@ -1,8 +1,12 @@
 import json
 import hashlib
 import logging
+import bcrypt
 from typing import Dict, Optional, Tuple
 from pathlib import Path
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(14)).decode()
 
 class AuthenticationManager:
     
@@ -13,6 +17,21 @@ class AuthenticationManager:
         self.users: Dict[str, Dict] = {}
         self.users_file = users_file or "config/users.json"
         self.load_users()
+        self._ensure_hashed_passwords()
+
+    def _ensure_hashed_passwords(self) -> None:
+        changed = False
+        for username, user_data in self.users.items():
+            stored_password = user_data.get('password', '')
+            if not stored_password.startswith('$2b$'):
+                user_data['password'] = hash_password(stored_password)
+                changed = True
+        
+        if changed:
+            path = Path(self.users_file)
+            with open(path, 'w') as f:
+                json.dump(self.users, f, indent=4)
+            self.logger.info("Senhas em plaintext convertidas para hash bcrypt com sucesso.")
 
     def load_users(self) -> None:
         path = Path(self.users_file)
@@ -92,12 +111,18 @@ class AuthenticationManager:
                 return False, None
             
             user = self.users[username]
-            expected_password = user['password']
+            stored_hash = user['password']
 
-            if expected_password == password:
+            # Se ainda for plaintext, converter
+            if not stored_hash.startswith('$2b$'):
+                stored_hash = hash_password(stored_hash)
+                self.users[username]['password'] = stored_hash
+                with open(self.users_file, 'w') as f:
+                    json.dump(self.users, f, indent=4)
+
+            if bcrypt.checkpw(password.encode(), stored_hash.encode()):
                 return True, user
-            else: 
-                return False, None
+            return False, None
         except Exception as e:
             self.logger.error(f"[-] Authentication error: {e}")
             return False, None
