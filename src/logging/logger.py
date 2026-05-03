@@ -11,7 +11,7 @@ class HoneypotLogger:
 
     def __init__(self, auth_log_path: str = '/tmp/honeypot_auth_log', internal_log_path: str = '/tmp/.honeypot_events.json'):
         self.auth_log_path = auth_log_path
-        self.intertnal_log_path = internal_log_path
+        self.internal_log_path = internal_log_path
         self.ssh_logger = self._setup_ssh_logger()
         self.events = []
 

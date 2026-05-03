@@ -50,7 +50,7 @@ def start_honeypot(config: dict, components: dict, logger: logging.Logger) -> No
         logger.info(f"[+] Iniciando SSH Honeypot")
         logger.info(f"[+] Host: {config['host']}:{config['port']}")
 
-        server = SSHHoneypotServer(config['host'], config['port'])
+        server = SSHHoneypotServer(config['host'], config['port'], components=components)
         logger.info("[*] Aguardando conexões...")
         server.start()
 

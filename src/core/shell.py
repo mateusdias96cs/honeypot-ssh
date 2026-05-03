@@ -5,7 +5,8 @@ import time
 
 class ShellSimulator:
     """Simula um shell bash/sh processa comando digitados pelo atacante"""
-    def __init__(self, username: str, home_dir: str, filesystem=None):
+    def __init__(self, username: str, home_dir: str, filesystem=None,
+                 honey_logger=None, client_ip: str = None):
         self.logger = logging.getLogger(__name__)
         self.username = username
         self.home_dir = home_dir
@@ -13,6 +14,8 @@ class ShellSimulator:
         self.environment = self._setup_environment()
         self.command_history = []
         self.filesystem = filesystem
+        self.honey_logger = honey_logger
+        self.client_ip = client_ip
         
 
     def _setup_environment(self) -> Dict[str, str]:
@@ -22,11 +25,9 @@ class ShellSimulator:
             'HOME': self.home_dir,
             'SHELL': '/bin/bash',
             'PATH': '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-           
-          }
+        }
     
     def execute_command(self, cmd: str) -> Optional[str]:
-        
         try:
             self.command_history.append(cmd)
 
@@ -35,6 +36,13 @@ class ShellSimulator:
                 return ""
             command = parts[0]
             args = parts[1:]
+
+            # Log command execution to HoneypotLogger
+            if self.honey_logger and self.client_ip:
+                self.honey_logger.log_command_execution(
+                    self.username, cmd, self.client_ip
+                )
+
             match command:
                 case "ls":
                     return self._cmd_ls(args)
@@ -70,17 +78,16 @@ class ShellSimulator:
         except Exception as e:
             self.logger.error(f"[-] Erro ao executar comando:{e}")
             return f"[-] Erro: {e}"
-        
-        
+    
     def _cmd_ls(self, args: list = None) -> str:
         if self.filesystem:
             contents = self.filesystem.list_directory(self.current_dir)
             if contents:
                 return ' '.join(contents)
-            
+        
         if args and ("-la" in args or "-al" in args):
             return "drwxr-xr-x 5 PC PC 4096 Mar 10 12:34"
-                        
+        
         return "Documents Downloads .bash_history .ssh"
     
     def _cmd_pwd(self) -> str:
@@ -109,12 +116,19 @@ class ShellSimulator:
     def _cmd_cat(self, args: list) -> str:
         if not args:
             return ""
-        filename = args[0]
-        files = {
-            '/etc/hostname': 'webserver01\n',
-            '/etc/os-release' : 'NAME="Ubuntu"\nVERSION="20.04"\n',
-        }
-        return files.get(filename, f'cat:{filename}: No such file or directory')
+        filepath = args[0]
+
+        # Log file access to HoneypotLogger
+        if self.honey_logger and self.client_ip:
+            self.honey_logger.log_file_access(
+                self.username, filepath, self.client_ip, 'read'
+            )
+
+        if self.filesystem:
+            content = self.filesystem.read_file(filepath)
+            if content:
+                return content
+        return f"cat: {filepath}: No such file or directory"
 
     def _cmd_sudo(self, args: list) -> str:
         return f'[sudo] password for{self.username}:'
@@ -128,17 +142,15 @@ class ShellSimulator:
         return "find: permission denied"
 
     def _cmd_wget(self, args: list) -> str:
-    
         time.sleep(3)
         return "wget: unable to resolve host address"
 
-    def _cmd_curl(self, args: list) -> str:    
+    def _cmd_curl(self, args: list) -> str:
         time.sleep(2)
         return "curl: (6) Could not resolve host"
 
     def _cmd_history(self) -> str:
         return '\n'.join(f"  {i+1}  {cmd}" for i, cmd in enumerate(self.command_history))
-
 
     def _cmd_cd(self, args: list) -> str:
         if not args:
@@ -151,13 +163,16 @@ class ShellSimulator:
             new_path = self.current_dir.rstrip('/') + '/' + args[0]
 
         if self.filesystem and self.filesystem.exists(new_path):
-
+            # Check that the target is a directory, not a file
+            file_info = self.filesystem.get_file(new_path)
+            if file_info and file_info.get('tipo') != 'dir':
+                return f"bash: cd: {args[0]}: Not a directory"
             if self.filesystem.is_locked(new_path):
-                return(
-                f"Permission denied: {args[0]} is encrypted.\n"
-                f"Access requires decryption key.\n"
-                f"Hash: $2b$14$XkJ9mNpQvRsWtYuZaAbBcDeFgHiJkLmNoPqRsTuVwXyZaAbBcDeFgH\n"
-                f"Hint: bcrypt rounds=14"
+                return (
+                    f"Permission denied: {args[0]} is encrypted.\n"
+                    f"Access requires decryption key.\n"
+                    f"Hash: $2b$14$XkJ9mNpQvRsWtYuZaAbBcDeFgHiJkLmNoPqRsTuVwXyZaAbBcDeFgH\n"
+                    f"Hint: bcrypt rounds=14"
                 )
             self.current_dir = new_path
             return ""

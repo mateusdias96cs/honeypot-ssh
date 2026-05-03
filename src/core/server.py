@@ -3,6 +3,8 @@ import threading
 import logging
 import time
 from typing import Optional, Tuple
+from src.core.shell import ShellSimulator
+from src.core.filesystem import VirtualFilesystem
 
 class SSHHoneypotServer:
     """
@@ -10,7 +12,7 @@ class SSHHoneypotServer:
     Responsável por aceitar e gerenciar conexões
     """
 
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, components: dict = None):
         self.host = host
         self.port = port
         self.server_socket: Optional[socket.socket] = None
@@ -18,6 +20,10 @@ class SSHHoneypotServer:
         self.running = False
         self.active_connections = []
         self.max_threads = 50
+        components = components or {}
+        self.honey_logger = components.get('logger')
+        self.filesystem = components.get('filesystem')
+        self.threat_intel = components.get('threat_intel')
 
     def create_server_socket(self) -> None:
         try:
@@ -32,21 +38,66 @@ class SSHHoneypotServer:
             raise
 
     def handle_connection(self, conn: socket.socket, addr: Tuple[str, int]) -> None:
-
-        
-
+        client_ip = addr[0]
         try:
             self.active_connections.append(addr)
-            self.logger.info(f"Conexão {addr}")
+            self.logger.info(f"Conexão recebida de {addr}")
+            
+            # Envia banner
             banner = b"SSH-2.0-OpenSSH_8.2\r\n"
             conn.sendall(banner)
-            time.sleep(1)
             
+            # Pede usuario
+            conn.sendall(b"login: ")
+            username = conn.recv(1024).decode().strip()
+            
+            # Pede senha
+            conn.sendall(b"Password: ")
+            password = conn.recv(1024).decode().strip()
+            
+            # Log authentication attempt
+            if self.honey_logger:
+                self.honey_logger.log_authentication_attempt(
+                    username, password, client_ip, success=True
+                )
+            
+            # Simula autenticacao
+            conn.sendall(f"\nWelcome to Ubuntu 20.04.6 LTS\r\n".encode())
+            conn.sendall(f"Last login: Fri Apr 25 10:02:01 2026 from 192.168.1.5\r\n\r\n".encode())
+            
+            # Shell interativo
+            fs = self.filesystem or VirtualFilesystem()
+            shell = ShellSimulator(
+                username or 'PC', '/home/PC', filesystem=fs,
+                honey_logger=self.honey_logger, client_ip=client_ip
+            )
+            
+            while True:
+                conn.sendall(shell.get_prompt().encode())
+                data = conn.recv(1024)
+                if not data:
+                    break
+                command = data.decode().strip()
+                if command in ('exit', 'quit', 'logout'):
+                    conn.sendall(b"logout\r\n")
+                    break
+                result = shell.execute_command(command)
+                if result:
+                    conn.sendall(f"{result}\r\n".encode())
             
         except Exception as e:
             self.logger.error(f"[-] Erro ao processar {addr}: {e}")
         finally:
             try:
+                # Check IP reputation after session ends
+                if self.threat_intel:
+                    reputation = self.threat_intel.check_ip_reputation(client_ip)
+                    if reputation.get('threat_level', 0) > 0:
+                        self.logger.warning(
+                            f"[!] Threat Intel para {client_ip}: "
+                            f"{reputation.get('reputation')} "
+                            f"(nível {reputation.get('threat_level')})"
+                        )
                 if addr in self.active_connections:
                     self.active_connections.remove(addr)
                 conn.close()
