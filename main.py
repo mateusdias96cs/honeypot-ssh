@@ -36,6 +36,7 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('paramiko').setLevel(logging.CRITICAL)
 logger = logging.getLogger(__name__)
 
 def main():
