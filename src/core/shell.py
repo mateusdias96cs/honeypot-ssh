@@ -440,7 +440,7 @@ class ShellSimulator:
                     f"Permission denied: {target} is encrypted.\n"
                     f"Access requires decryption key.\n"
                     f"Hash: $2b$14$XkJ9mNpQvRsWtYuZaAbBcDeFgHiJkLmNoPqRsTuVwXyZaAbBcDeFgH\n"
-                    f"Hint: bcrypt rounds=14"
+                    
                 )
             self.current_dir = new_path
             return ""
