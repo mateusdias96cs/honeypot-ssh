@@ -224,7 +224,7 @@ class SSHHoneypotServer:
     
     def _handle_shell(self, channel: paramiko.Channel, username: str, client_ip: str):
         """
-        Simula shell interativo usando ShellSimulator.
+        Simula shell interativo com echo de caracteres em tempo real.
         Captura comandos e registra no logger.
         """
         filesystem = VirtualFilesystem()
@@ -242,56 +242,77 @@ class SSHHoneypotServer:
             channel.send(b"Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-84-generic x86_64)\r\n\r\n")
             channel.send(shell.get_prompt().encode())
 
-            buf = b''
+            line_buf = ''
+            escape_state = 0  # 0=normal, 1=got ESC, 2=got ESC[
+            prev_was_cr = False
+
             while True:
                 data = channel.recv(1024)
                 if not data:
                     break
 
-                buf += data
+                for byte_val in data:
+                    # Skip LF immediately following CR (\r\n treated as one Enter)
+                    if byte_val == 0x0a and prev_was_cr:
+                        prev_was_cr = False
+                        continue
+                    prev_was_cr = False
 
-                # Process complete lines (handle \r\n, \n, and bare \r)
-                while True:
-                    cr = buf.find(b'\r')
-                    lf = buf.find(b'\n')
-
-                    if cr == -1 and lf == -1:
-                        break
-
-                    if cr == -1:
-                        pos, end = lf, lf + 1
-                    elif lf == -1:
-                        pos, end = cr, cr + 1
-                    else:
-                        pos = min(cr, lf)
-                        end = pos + 2 if buf[pos:pos + 2] == b'\r\n' else pos + 1
-
-                    line = buf[:pos]
-                    buf = buf[end:]
-
-                    command = line.decode('utf-8', errors='ignore').strip()
-
-                    if not command:
-                        channel.send(f"\r\n{shell.get_prompt()}".encode())
+                    # Escape sequence state machine — ignore arrow keys and similar
+                    if escape_state == 1:
+                        escape_state = 2 if byte_val == 0x5b else 0
+                        continue
+                    if escape_state == 2:
+                        escape_state = 0
+                        continue
+                    if byte_val == 0x1b:  # ESC — begin escape sequence
+                        escape_state = 1
                         continue
 
-                    self.logger.info(f"[CMD] {username}@{client_ip}: {command}")
+                    if byte_val == 0x03:  # Ctrl+C — abort current line
+                        channel.send(b'^C\r\n')
+                        line_buf = ''
+                        channel.send(shell.get_prompt().encode())
+                        continue
 
-                    if command.lower() in ('exit', 'logout', 'quit'):
-                        channel.send(b"\r\nlogout\r\n")
-                        return
+                    if byte_val in (0x0d, 0x0a):  # Enter
+                        prev_was_cr = (byte_val == 0x0d)
+                        channel.send(b'\r\n')
+                        command = line_buf.strip()
+                        line_buf = ''
 
-                    response = shell.execute_command(command)
-                    if response is None:
-                        response = ""
+                        if not command:
+                            channel.send(shell.get_prompt().encode())
+                            continue
 
-                    # Normalize line endings for SSH transport
-                    response = response.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+                        self.logger.info(f"[CMD] {username}@{client_ip}: {command}")
 
-                    if response:
-                        channel.send(f"\r\n{response}\r\n{shell.get_prompt()}".encode())
-                    else:
-                        channel.send(f"\r\n{shell.get_prompt()}".encode())
+                        if command.lower() in ('exit', 'logout', 'quit'):
+                            channel.send(b"logout\r\n")
+                            return
+
+                        response = shell.execute_command(command)
+                        if response is None:
+                            response = ""
+
+                        # Normalize line endings for SSH transport
+                        response = response.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+
+                        if response:
+                            channel.send(f"{response}\r\n{shell.get_prompt()}".encode())
+                        else:
+                            channel.send(shell.get_prompt().encode())
+                        continue
+
+                    if byte_val in (0x7f, 0x08):  # Backspace / Delete
+                        if line_buf:
+                            line_buf = line_buf[:-1]
+                            channel.send(b'\x08 \x08')
+                        continue
+
+                    if 0x20 <= byte_val <= 0x7e:  # Printable ASCII — echo back
+                        line_buf += chr(byte_val)
+                        channel.send(bytes([byte_val]))
 
         except Exception as e:
             self.logger.error(f"Erro no shell: {e}")

@@ -96,6 +96,10 @@ class ShellSimulator:
                     return self._cmd_nc(args)
                 case "ssh":
                     return self._cmd_ssh(args)
+                case "crontab":
+                    return self._cmd_crontab(args)
+                case "clear":
+                    return "\x1b[2J\x1b[H"
                 case _:
                     return f"bash: {command}: command not found"
                 
@@ -200,6 +204,9 @@ class ShellSimulator:
             return 'processor\t: 0\nvendor_id\t: GenuineIntel\nmodel name\t: Intel Xeon E5-2680 v4 @ 2.40GHz\ncpu MHz\t\t: 2400.000\ncache size\t: 35840 KB'
 
         if self.filesystem:
+            file_info = self.filesystem.get_file(filepath)
+            if file_info and file_info.get('tipo') == 'dir':
+                return f"cat: {filepath}: Is a directory"
             content = self.filesystem.read_file(filepath)
             if content:
                 return content
@@ -348,7 +355,7 @@ class ShellSimulator:
         if not args:
             return "usage: ssh [-p port] [user@]hostname [command]"
         target = args[-1]
-        time.sleep(4)
+        time.sleep(2)
         host = target.split('@')[-1] if '@' in target else target
         return f"ssh: connect to host {host} port 22: Connection timed out"
 
@@ -363,11 +370,11 @@ class ShellSimulator:
     
     def _cmd_wget(self, args: list) -> str:
         target = args[0] if args else 'example.com'
-        time.sleep(3)
         host = target.replace('http://', '').replace('https://', '').split('/')[0]
+        time.sleep(2)
         return (
             f"--{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {target}\n"
-            f"Resolving {host} ({host})... failed: Name or service not known.\n"
+            f"Resolving {host} ({host})...\n"
             f"wget: unable to resolve host address '{host}'"
         )
 
@@ -381,10 +388,20 @@ class ShellSimulator:
             )
         time.sleep(2)
         host = target.replace('http://', '').replace('https://', '').split('/')[0]
-        return f"curl: (6) Could not resolve host: {host}"
+        return (
+            "  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current\n"
+            "                                 Dload  Upload   Total   Spent    Left  Speed\n"
+            f"\ncurl: (6) Could not resolve host: {host}"
+        )
 
     def _cmd_history(self) -> str:
         return '\n'.join(f"  {i+1}  {cmd}" for i, cmd in enumerate(self.command_history))
+
+    def _cmd_crontab(self, args: list) -> str:
+        if args and '-l' in args:
+            content = self.filesystem.read_file('/etc/crontab') if self.filesystem else None
+            return content or f"no crontab for {self.username}"
+        return "crontab: usage error"
 
     def _cmd_cd(self, args: list) -> str:
         if not args:
