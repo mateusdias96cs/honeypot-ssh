@@ -115,3 +115,4 @@ Esta ferramenta é destinada exclusivamente para fins educacionais, pesquisa de 
 **Mateus Dias** — Estudante de Cibersegurança | Blue Team
 
 [![GitHub](https://img.shields.io/badge/GitHub-mateusdias96cs-black)](https://github.com/mateusdias96cs)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Mateus_Dias-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/mateusdiascs/)
