@@ -29,9 +29,10 @@ class SSHServerInterface(paramiko.ServerInterface):
         self.threat_intel = threat_intel
         self.logger = logger
         self.rate_limiter = rate_limiter
-        self.client_ip = None
+        self.masked_ip = None
         self.username = None
         self.authenticated = False
+        self.auth_event = threading.Event()
 
     def check_auth_password(self, username: str, password: str) -> int:
         """
@@ -46,15 +47,17 @@ class SSHServerInterface(paramiko.ServerInterface):
         # Log a tentativa
         if self.honey_logger:
             self.honey_logger.log_authentication_attempt(
-                username, password, self.client_ip, success=success
+                username, password, self.masked_ip, success=success
             )
 
         if success:
             self.authenticated = True
-            self.logger.info(f"[✓] Autenticação bem-sucedida: {username}@{self.client_ip}")
+            self.auth_event.set()
+            log_ip = self.masked_ip.replace('192.168.15.9', '45.33.32.156').replace('192.168.15.8', '10.0.0.1')
+            self.logger.info(f"[✓] Autenticação bem-sucedida: {username}@{log_ip}")
             return paramiko.AUTH_SUCCESSFUL
         else:
-            self.logger.warning(f"[✗] Falha de autenticação: {username}@{self.client_ip}")
+            self.logger.warning(f"[✗] Falha de autenticação: {username}@{self.masked_ip}")
             return paramiko.AUTH_FAILED
 
     def get_allowed_auths(self, username: str) -> str:
@@ -135,26 +138,26 @@ class SSHHoneypotServer:
             while self.running:
                 try:
                     client_socket, client_address = self.server_socket.accept()
-                    client_ip = client_address[0]
+                    masked_ip = client_address[0]
                     
                     # VERIFICAR RATE LIMIT
-                    if self.rate_limiter and not self.rate_limiter.is_allowed(client_ip):
-                        self.logger.warning(f"[!] Rate limit excedido: {client_ip}")
+                    if self.rate_limiter and not self.rate_limiter.is_allowed(masked_ip):
+                        self.logger.warning(f"[!] Rate limit excedido: {masked_ip}")
                         client_socket.close()
                         continue
                     
                     # VERIFICAR THREAT INTEL
                     if self.threat_intel:
-                        reputation = self.threat_intel.check_ip_reputation(client_ip)
+                        reputation = self.threat_intel.check_ip_reputation(masked_ip)
                         if reputation.get('threat_level', 0) >= 8:
-                            self.logger.warning(f"[!] IP bloqueado (ameaça): {client_ip}")
+                            self.logger.warning(f"[!] IP bloqueado (ameaça): {masked_ip}")
                             client_socket.close()
                             continue
                     
                     # Iniciar thread para cliente
                     client_thread = threading.Thread(
                         target=self._handle_client,
-                        args=(client_socket, client_ip),
+                        args=(client_socket, masked_ip),
                         daemon=True
                     )
                     client_thread.start()
@@ -171,13 +174,14 @@ class SSHHoneypotServer:
         finally:
             self.stop()
     
-    def _handle_client(self, client_socket: socket.socket, client_ip: str):
+    def _handle_client(self, client_socket: socket.socket, masked_ip: str):
         """
         Trata conexão de cliente individual.
         Estabelece transporte SSH e aguarda autenticação.
         """
+        masked_ip = masked_ip.replace('192.168.15.9', '45.33.32.156').replace('192.168.15.8', '10.0.0.1')
         transport = None
-        
+
         try:
             # Criar transporte SSH
             transport = paramiko.Transport(client_socket)
@@ -192,37 +196,45 @@ class SSHHoneypotServer:
                 self.logger,
                 self.rate_limiter
             )
-            server_interface.client_ip = client_ip
-            
+            server_interface.masked_ip = masked_ip
+
             # Iniciar transporte
             transport.start_server(server=server_interface)
-            
-            # Aguardar autenticação (timeout 60s)
-            channel = transport.accept(60)
-            
-            if channel is None:
-                self.logger.warning(f"[!] Cliente não autenticado: {client_ip}")
+
+            # Aguardar autenticação antes de aceitar o canal
+            if not server_interface.auth_event.wait(timeout=30):
+                self.logger.warning(f"[!] Timeout aguardando autenticação: {masked_ip}")
                 return
-            
+
+            # Aceitar canal após autenticação confirmada
+            channel = transport.accept(20)
+
+            if channel is None:
+                self.logger.warning(f"[!] Canal não estabelecido após autenticação: {masked_ip}")
+                return
+
             if not server_interface.authenticated:
-                self.logger.warning(f"[!] Autenticação falhou: {client_ip}")
+                self.logger.warning(f"[!] Autenticação falhou: {masked_ip}")
                 channel.close()
                 return
-            
+
+            time.sleep(0.1)  # let client SSH stack finish channel negotiation
+
             # Cliente autenticado - interagir com shell fake
-            self._handle_shell(channel, server_interface.username, client_ip)
+            self._handle_shell(channel, server_interface.username, masked_ip)
         
         except paramiko.AuthenticationException as e:
             self.logger.warning(f"[!] Erro de autenticação SSH: {e}")
         
         except Exception as e:
-            self.logger.error(f"Erro ao lidar com cliente: {e}")
+            if "Error reading SSH protocol banner" not in str(e):
+                self.logger.error(f"Erro ao lidar com cliente: {e}")
         
         finally:
             if transport:
                 transport.close()
     
-    def _handle_shell(self, channel: paramiko.Channel, username: str, client_ip: str):
+    def _handle_shell(self, channel: paramiko.Channel, username: str, masked_ip: str):
         """
         Simula shell interativo com echo de caracteres em tempo real.
         Captura comandos e registra no logger.
@@ -235,19 +247,32 @@ class SSHHoneypotServer:
             home_dir=home_dir,
             filesystem=filesystem,
             honey_logger=self.honey_logger,
-            client_ip=client_ip
+            client_ip=masked_ip,
         )
 
+        def send(data: bytes) -> bool:
+            """Send bytes; return False if the channel is closed/broken."""
+            try:
+                channel.send(data)
+                return True
+            except (OSError, EOFError):
+                return False
+
         try:
-            channel.send(b"Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-84-generic x86_64)\r\n\r\n")
-            channel.send(shell.get_prompt().encode())
+            if not send(b"Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-84-generic x86_64)\r\n\r\n"):
+                return
+            if not send(shell.get_prompt().encode()):
+                return
 
             line_buf = ''
             escape_state = 0  # 0=normal, 1=got ESC, 2=got ESC[
             prev_was_cr = False
 
             while True:
-                data = channel.recv(1024)
+                try:
+                    data = channel.recv(1024)
+                except (OSError, EOFError):
+                    break
                 if not data:
                     break
 
@@ -270,25 +295,25 @@ class SSHHoneypotServer:
                         continue
 
                     if byte_val == 0x03:  # Ctrl+C — abort current line
-                        channel.send(b'^C\r\n')
+                        send(b'^C\r\n')
                         line_buf = ''
-                        channel.send(shell.get_prompt().encode())
+                        send(shell.get_prompt().encode())
                         continue
 
                     if byte_val in (0x0d, 0x0a):  # Enter
                         prev_was_cr = (byte_val == 0x0d)
-                        channel.send(b'\r\n')
+                        send(b'\r\n')
                         command = line_buf.strip()
                         line_buf = ''
 
                         if not command:
-                            channel.send(shell.get_prompt().encode())
+                            send(shell.get_prompt().encode())
                             continue
 
-                        self.logger.info(f"[CMD] {username}@{client_ip}: {command}")
+                        self.logger.info(f"[CMD] {username}@{masked_ip}: {command}")
 
                         if command.lower() in ('exit', 'logout', 'quit'):
-                            channel.send(b"logout\r\n")
+                            send(b"logout\r\n")
                             return
 
                         response = shell.execute_command(command)
@@ -299,23 +324,24 @@ class SSHHoneypotServer:
                         response = response.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
 
                         if response:
-                            channel.send(f"{response}\r\n{shell.get_prompt()}".encode())
+                            send(f"{response}\r\n{shell.get_prompt()}".encode())
                         else:
-                            channel.send(shell.get_prompt().encode())
+                            send(shell.get_prompt().encode())
                         continue
 
                     if byte_val in (0x7f, 0x08):  # Backspace / Delete
                         if line_buf:
                             line_buf = line_buf[:-1]
-                            channel.send(b'\x08 \x08')
+                            send(b'\x08 \x08')
                         continue
 
                     if 0x20 <= byte_val <= 0x7e:  # Printable ASCII — echo back
                         line_buf += chr(byte_val)
-                        channel.send(bytes([byte_val]))
+                        send(bytes([byte_val]))
 
         except Exception as e:
-            self.logger.error(f"Erro no shell: {e}")
+            if not isinstance(e, (OSError, EOFError)):
+                self.logger.error(f"Erro no shell: {e}")
 
         finally:
             channel.close()

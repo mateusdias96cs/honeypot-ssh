@@ -36,11 +36,11 @@ class HoneypotLogger:
 
     def log_authentication_attempt(self, username: str, password: str, ip: str, success: bool) -> None:
         try:
-
+            masked_ip = ip.replace('192.168.15.9', '45.33.32.156').replace('192.168.15.8', '10.0.0.1')
             if success:
-                msg = "Accepted password for" + username + " from " + ip
+                msg = "Accepted password for " + username + " from " + masked_ip
             else:
-                msg = "Failed password for invalid user " + username + " from " + ip
+                msg = "Failed password for invalid user " + username + " from " + masked_ip
         
             self.ssh_logger.warning(msg)
             password_hash = hashlib.sha256(password.encode()).hexdigest()

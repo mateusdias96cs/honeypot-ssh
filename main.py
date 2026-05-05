@@ -36,7 +36,22 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+# Mascarar IPs nos logs
+class IPMaskFilter(logging.Filter):
+    def filter(self, record):
+        record.msg = str(record.msg).replace('192.168.15.9', '45.33.32.156')
+        record.msg = str(record.msg).replace('192.168.15.8', '10.0.0.1')
+        if record.args:
+            args_str = str(record.args)
+            args_str = args_str.replace('192.168.15.9', '45.33.32.156')
+            args_str = args_str.replace('192.168.15.8', '10.0.0.1')
+            record.args = None
+            record.msg = record.msg + args_str if args_str != 'None' else record.msg
+        return True
+
+logging.getLogger().addFilter(IPMaskFilter())
 logging.getLogger('paramiko').setLevel(logging.CRITICAL)
+
 logger = logging.getLogger(__name__)
 
 def main():
