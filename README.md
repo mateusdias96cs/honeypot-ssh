@@ -41,7 +41,7 @@ Diretório bloqueado que apresenta um hash bcrypt falso para fazer o atacante pe
 Permission denied: secret_vault is encrypted.
 Access requires decryption key.
 Hash: $2b$14$XkJ9mNpQvRsWtYuZaAbBcDeFgHiJkLmNoPqRsTuVwXyZaAbBcDeFgH
-Hint: bcrypt rounds=14
+
 ```
 
 ### 6 Regras de Detecção
