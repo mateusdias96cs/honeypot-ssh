@@ -110,6 +110,10 @@ Esta ferramenta é destinada exclusivamente para fins educacionais, pesquisa de 
 
 ---
 
+## Licença
+
+MIT License — veja o arquivo [LICENSE](LICENSE) para detalhes.
+
 ## Autor
 
 **Mateus Dias** — Estudante de Cibersegurança | Blue Team
