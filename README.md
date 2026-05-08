@@ -118,5 +118,8 @@ MIT License — veja o arquivo [LICENSE](LICENSE) para detalhes.
 
 **Mateus Dias** — Estudante de Cibersegurança | Blue Team
 
+## Atualização
+Projeto revisado e validado em maio de 2025.
+
 [![GitHub](https://img.shields.io/badge/GitHub-mateusdias96cs-black)](https://github.com/mateusdias96cs)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Mateus_Dias-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/mateusdiascs/)
