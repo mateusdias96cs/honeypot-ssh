@@ -9,9 +9,14 @@ import hashlib
 class HoneypotLogger:
     """Sistema de logging profissional"""
 
-    def __init__(self, auth_log_path: str = '/tmp/honeypot_auth_log', internal_log_path: str = '/tmp/.honeypot_events.json'):
+    def __init__(
+    self,
+    auth_log_path: str = '/tmp/honeypot_auth_log',
+    internal_log_path: str = '/tmp/.honeypot_events.json'
+    ):
         self.auth_log_path = auth_log_path
         self.internal_log_path = internal_log_path
+        self.auth_attempts_path = '/tmp/.honeypot_auth_attempts.json'  # NOVO
         self.ssh_logger = self._setup_ssh_logger()
         self.events = []
 
@@ -34,27 +39,37 @@ class HoneypotLogger:
         logger.addHandler(handler)
         return logger
 
-    def log_authentication_attempt(self, username: str, password: str, ip: str, success: bool) -> None:
+    def log_authentication_attempt(self, username, password, ip, success):
         try:
             masked_ip = ip.replace('192.168.15.9', '45.33.32.156').replace('192.168.15.8', '10.0.0.1')
             if success:
                 msg = "Accepted password for " + username + " from " + masked_ip
             else:
                 msg = "Failed password for invalid user " + username + " from " + masked_ip
-        
+
             self.ssh_logger.warning(msg)
             password_hash = hashlib.sha256(password.encode()).hexdigest()
 
             event = {
-            "timestamp" : datetime.now().isoformat(),
-            "type": "auth_attempt",
-            "username": username,
-            "password_hash": password_hash,
-            "ip": ip,
-            "success": success
-        }
+                "timestamp": datetime.now().isoformat(),
+                "type": "auth_attempt",
+                "username": username,
+                "password_hash": password_hash,
+                "ip": ip,
+                "success": success
+            }
             self.events.append(event)
-            
+
+            # Grava em arquivo DEDICADO so para auth_attempts
+            try:
+                with open(self.auth_attempts_path, 'a') as f:
+                    f.write(json.dumps(event) + '\n')
+            except Exception as e:
+                print(f"[-] Erro ao salvar auth_attempt: {e}")
+
+            # Tambem grava no arquivo geral
+            self._save_internal_event(event)
+
         except Exception as e:
             print(f"[-] Erro ao logar: {e}")
         
