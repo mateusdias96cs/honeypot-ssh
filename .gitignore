@@ -1,7 +1,5 @@
 __pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-data/
-h
+*.pyc
+*.pyo
 .env
+data/host_key.pem
